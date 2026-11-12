@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  # Every pull request, including ones stacked on another feature branch.
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-and-test:
+    name: Check & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The runner's package mirror sometimes hangs or fails DNS. The image already
+      # ships cmake, pkg-config and build-essential, and audiopus_sys can build its
+      # bundled Opus with cmake when libopus-dev is missing, so a failed install is
+      # not fatal here; a dependency that is really missing fails `cargo check`.
+      - name: Install system dependencies
+        timeout-minutes: 10
+        continue-on-error: true
+        run: |
+          # Three attempts; after a failed one, switch from the Azure mirror to
+          # archive.ubuntu.com (DNS for azure.archive.ubuntu.com fails at times).
+          for i in 1 2 3; do
+            sudo apt-get -o Acquire::Retries=5 update && sudo apt-get -o Acquire::Retries=5 install -y pkg-config libssl-dev libopus-dev cmake build-essential && break
+            if [ "$i" = 3 ]; then exit 1; fi
+            sudo sed -i 's#http://azure.archive.ubuntu.com#http://archive.ubuntu.com#g; s#https://azure.archive.ubuntu.com#http://archive.ubuntu.com#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+            sleep 15
+          done
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Check
+        run: cargo check --locked
+
+      # Lets a maintainer without a local toolchain commit the refreshed lock file.
+      - name: Upload Cargo.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-lock
+          path: Cargo.lock
+
+      - name: Cargo Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      # Clippy, tests and fmt each report even when an earlier one fails.
+      - name: Cargo Test
+        if: ${{ !cancelled() }}
+        run: cargo test --locked -- --nocapture
+
+      # On failure the formatting diff is uploaded as `fmt-patch` so a maintainer
+      # without a local toolchain can apply it with `git apply fmt.patch`.
+      - name: Cargo Format
+        if: ${{ !cancelled() }}
+        run: |
+          if ! cargo fmt --check; then
+            cargo fmt
+            git diff > fmt.patch
+            exit 1
+          fi
+
+      - name: Upload fmt patch
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmt-patch
+          path: fmt.patch
+          if-no-files-found: ignore
+
+      # When clippy fails, the machine-applicable fixes (plus fmt) are uploaded
+      # as `clippy-fix-patch`; lints without an automatic fix still need a manual edit.
+      - name: Build clippy fix patch
+        if: failure()
+        run: |
+          git checkout -- .
+          cargo clippy --fix --allow-dirty --allow-no-vcs --locked --all-targets || true
+          cargo fmt
+          git diff > clippy-fix.patch
+
+      - name: Upload clippy fix patch
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clippy-fix-patch
+          path: clippy-fix.patch
+          if-no-files-found: ignore
+
+  # Known vulnerabilities (RustSec) and dependency licenses; policy in deny.toml.
+  cargo-deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check advisories and licenses
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses
+
+  # Release binary for the systemd host (Ubuntu 24.04, same glibc as this runner).
+  release-binary:
+    name: Release Binary
+    runs-on: ubuntu-24.04
+    needs: check-and-test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        timeout-minutes: 10
+        run: |
+          # Same retry and mirror fallback as the Check & Test job.
+          for i in 1 2 3; do
+            sudo apt-get -o Acquire::Retries=5 update && sudo apt-get -o Acquire::Retries=5 install -y pkg-config libopus-dev cmake build-essential && break
+            if [ "$i" = 3 ]; then exit 1; fi
+            sudo sed -i 's#http://azure.archive.ubuntu.com#http://archive.ubuntu.com#g; s#https://azure.archive.ubuntu.com#http://archive.ubuntu.com#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+            sleep 15
+          done
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      # Rough figures for comparing dependency upgrades.
+      - name: Report binary size
+        run: |
+          ls -l target/release/rust_bot
+          echo "packages in Cargo.lock: $(grep -c '^\[\[package\]\]' Cargo.lock)"
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust_bot-linux-x86_64
+          path: target/release/rust_bot
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: check-and-test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t tetbot-rust:ci .
