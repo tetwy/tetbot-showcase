@@ -94,4 +94,4 @@ Bu dosya tek başına derlenen bir crate değildir; `serenity`, `tokio`, `dashma
 
 ## Lisans
 
-<!-- TODO: vitrin reposu için lisans seçimi -->
+MIT — ayrıntı için [LICENSE](LICENSE).
