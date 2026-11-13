@@ -1,97 +1,97 @@
 # tetbot
 
-**Discord sunucunuzu canlı tutan bot: ses seviyeleri, sanal ekonomi, sanal coin ile oynanan mini oyunlar, yaratık avı ve radyo tek yerde.**
+**A Discord bot that keeps your server lively: voice levels, a virtual economy, mini games played with virtual coins, creature hunting and radio, all in one place.**
 
-Bu repo tetbot'un vitrinidir. Botun kaynak kodu private repoda durur; burada neler yaptığı, nasıl çalıştığı, CI kanıtı ve altyapıdan seçilmiş bir modül var.
+This repo is the showcase for tetbot. The bot's source code lives in a private repo. Here I share what it does, how it works, the CI setup and one module picked from the infrastructure.
 
-> Botdaki coin, chip ve kredi tamamen sanaldır; gerçek para değeri yoktur ve paraya çevrilemez.
+> The coins, chips and credits in the bot are entirely virtual. They have no real-world value and cannot be cashed out.
 
-<!-- TODO: ekran görüntüsü — /rank kartı -->
-<!-- TODO: ekran görüntüsü — arena (3v3) savaş kartı -->
-<!-- TODO: ekran görüntüsü — /market ve portföy -->
+<!-- TODO: screenshot — /rank card -->
+<!-- TODO: screenshot — arena (3v3) battle card -->
+<!-- TODO: screenshot — /market and portfolio -->
 
-## Sunucuya ne katar
+## What it adds to a server
 
-**Sesli sohbet artık bir oyun.** Ses kanalında geçirilen süre izlenir; herkes level atlar, ödül coini ve ses kilometre taşı rolleri kazanır. Level, sıralama ve savaş sonuçları görsel kartlar olarak üretilir.
+**Voice chat becomes a game.** The time people spend in voice channels is tracked. Everyone levels up and earns reward coins and voice milestone roles. Levels, rankings and battle results are generated as image cards.
 
-**Kendi ekonomisi olan bir sunucu.** Günlük ve haftalık ödüller, görevler, banka (vadesiz ve vadeli hesap), kullanıcılar arası transfer ve faizli borç, zenginler ve kaybedenler tabloları. Her sunucunun piyasası ayrıdır; hisseler periyodik dalgalanır, alım satım ve portföy takibi yapılır.
+**A server with its own economy.** Daily and weekly rewards, quests, a bank (checking and fixed-term accounts), transfers between users, loans with interest, and leaderboards for the richest and the biggest losers. Every server has its own market. Stocks fluctuate periodically, and you can trade them and track your portfolio.
 
-**Oynanacak çok şey var.**
-- Sanal coin ile oynanan mini oyunlar (kart ve şans temalı) ve oyuncular arası versus; gerçek para içermez.
-- Topluluk tahminleri: tahmin aç, sanal coin ile katıl, sonucu belirle.
-- Hunt: yaratık yakala, koleksiyon yap, takım kur, geliştir, 3v3 arena savaşına gir, kasa aç.
+**Plenty to play.**
+- Mini games played with virtual coins (card and luck themed) and player-vs-player versus matches. No real money is involved.
+- Community predictions: open a prediction, join with virtual coins, settle the result.
+- Hunt: catch creatures, build a collection, form a team, upgrade it, enter 3v3 arena battles and open crates.
 
-**Radyo ve müzik.** Link ya da aramadan çalma, kuyruk, loop, ses seviyesi ve filtreler; oynatma mesajı üzerinden butonlarla kontrol. Bazı özellikler premium kapsamındadır.
+**Radio and music.** Play from a link or a search, with a queue, loop, volume and filters. You control playback with buttons on the player message. Some features are part of premium.
 
-**Yönetici dostu araçlar.**
-- Join-to-Create: istek üzerine geçici ses kanalı, sahibine özel isim ve limit ayarı; boşalınca kanal silinir.
-- Rol seçimi menüleri (selfrole), coin ile rol satan rol mağazası, ses seviyesine bağlı roller, yapılandırılabilir karşılama mesajı.
-- Web dashboard: bot durumu ve istatistikleri.
+**Tools for server admins.**
+- Join-to-Create: a temporary voice channel on demand, with a name and limit the owner can set. The channel is deleted when it empties.
+- Role selection menus (selfrole), a role shop that sells roles for coins, roles tied to voice level, and a configurable welcome message.
+- Web dashboard: bot status and statistics.
 
-**Gizlilik ve dil.** `/forgetme` ile kullanıcı kendi verisini siler. Türkçe ve İngilizce, kullanıcının Discord diline göre.
+**Privacy and language.** With `/forgetme`, users delete their own data. The bot speaks Turkish and English, based on the user's Discord language.
 
-## Teknik güç
+## Under the hood
 
-- **Rust.** Tek binary, düşük kaynak tüketimi; Tokio üzerinde asenkron çalışır.
-- **Para güvenliği.** Tüm yazmalar tek writer üzerinden sıraya girer, her bakiye değişikliği tek transaction içinde olur ve defter (ledger) satırı bırakır.
-- **Dayanıklılık.** Bir komuttaki panic yalnız o görevi bitirir; arka plan döngüleri kendini yeniden başlatır.
-- **Gözlemlenebilirlik.** Gateway'i bilen `/health` ve Prometheus formatında `/metrics`.
-- **Kalite kapıları.** Her push'ta `clippy -D warnings`, testler, `cargo fmt` ve `cargo deny`.
-- **Canlıya alma.** Docker imajı (root olmayan kullanıcı), sha256 doğrulamalı deploy ve sağlık kontrolü başarısızsa otomatik geri dönüş.
+- **Rust.** A single binary with low resource use, running asynchronously on Tokio.
+- **Money safety.** All writes are queued through a single writer. Every balance change happens inside one transaction and leaves a ledger row.
+- **Resilience.** A panic in one command ends only that task, and background loops restart themselves.
+- **Observability.** A `/health` endpoint that knows about the gateway, and `/metrics` in Prometheus format.
+- **Quality gates.** On every push: `clippy -D warnings`, tests, `cargo fmt` and `cargo deny`.
+- **Deployment.** A Docker image (non-root user), a deploy with sha256 verification, and an automatic rollback if the health check fails.
 
 ```mermaid
 flowchart LR
     GW[Discord gateway] --> EV[events]
-    SC[Slash komutlar<br/>poise] --> CMD[commands/*]
-    VS[Ses olayları] --> VO[voice tracker]
+    SC[Slash commands<br/>poise] --> CMD[commands/*]
+    VS[Voice events] --> VO[voice tracker]
     EV --> DB
     CMD --> DB
     VO --> DB
-    BG[Gözetimli arka plan<br/>döngüleri] --> DB
-    DB[(SQLite, WAL<br/>tek writer + okuma havuzu)]
-    CMD --> CARD[card/ui<br/>görsel kart üretimi]
+    BG[Supervised background<br/>loops] --> DB
+    DB[(SQLite, WAL<br/>single writer + read pool)]
+    CMD --> CARD[card/ui<br/>image card generation]
     WEB[axum web<br/>/health /metrics] --> TEL[telemetry]
     WEB --> DB
     TEL --> GW
 ```
 
-## Teknoloji
+## Stack
 
-| Alan | Seçim |
+| Area | Choice |
 | --- | --- |
-| Dil | Rust, edition 2024 |
+| Language | Rust, edition 2024 |
 | Discord | `serenity` 0.12 + `poise` 0.6 |
-| Ses | `songbird` 0.6, `symphonia`, ffmpeg + yt-dlp |
-| Veritabanı | SQLite, `sqlx` 0.8, WAL |
+| Voice | `songbird` 0.6, `symphonia`, ffmpeg + yt-dlp |
+| Database | SQLite, `sqlx` 0.8, WAL |
 | HTTP | `axum` 0.7, `reqwest` 0.12 |
-| Görsel | `image`, `imageproc`, `ab_glyph` |
-| Altyapı | Docker, systemd, GitHub Actions, Litestream (opsiyonel yedek) |
+| Graphics | `image`, `imageproc`, `ab_glyph` |
+| Infrastructure | Docker, systemd, GitHub Actions, Litestream (optional backup) |
 
-## CI ve test kanıtı
+## CI and tests
 
-[`ci-kaniti/ci.yml`](ci-kaniti/ci.yml), private repodaki GitHub Actions iş akışının kopyasıdır. Her push ve PR'da:
+[`ci-reference/ci.yml`](ci-reference/ci.yml) is a copy of the GitHub Actions workflow from the private repo. On every push and pull request it runs:
 
 - `cargo check --locked`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `cargo fmt --check`
-- ayrı bir işte `cargo deny check advisories licenses` (RustSec güvenlik uyarıları ve lisans politikası)
-- release binary'si ve Docker imajı derlemesi
-- fmt ya da clippy başarısız olursa uygulanabilir düzeltme yamaları artifact olarak yüklenir
+- `cargo deny check advisories licenses` in a separate job (RustSec security advisories and the license policy)
+- a release binary build and a Docker image build
+- if fmt or clippy fails, the applicable fix patches are uploaded as artifacts
 
-Ekonomi ve şema geçiş testleri geçici bir SQLite dosyasında çalışır; telemetri ve web katmanının birim testleri vardır.
+The economy and schema migration tests run against a temporary SQLite file. The telemetry and web layers have their own unit tests.
 
-<!-- TODO: CI rozeti ya da başarılı çalışma ekran görüntüsü -->
+<!-- TODO: CI badge or a screenshot of a successful run -->
 
-## Örnek modül: `src/telemetry.rs`
+## Example module: `src/telemetry.rs`
 
-Botun gözlemlenebilirlik ve dayanıklılık modülü. Ekonomiye bağlı tek metrik (sunucu başına coin arzı) ve onu besleyen veritabanı döngüsü çıkarıldı; kalanı bottaki modülle aynıdır.
+This is the bot's observability and resilience module. I removed the one economy-related metric (coin supply per server) and the database loop that feeds it. The rest is the same as the module in the bot.
 
-- **Gateway durumu:** shard'ları 10 sn'de bir örnekler; örnek 60 sn'den eskiyse bağlantıyı "yok" sayar.
-- **Prometheus metrikleri:** komut sayısı, hata sayısı ve süre histogramı; atomik sayaçlar ve komut adına göre `DashMap`, ilk çağrıdan sonra bellek ayırmaz.
-- **Panic hook:** her panic'i konumuyla loglar ve sayar.
-- **`spawn_supervised`:** arka plan döngüsünü kendi görevinde çalıştırır, panic sonrası 5 sn'den 5 dk'ya katlanan beklemeyle yeniden başlatır, 10 dk sorunsuz çalışınca beklemeyi sıfırlar.
-- Modülün kendi birim testleri dosyanın sonundadır.
+- **Gateway state:** samples the shards every 10 s. If the sample is older than 60 s, the connection counts as down.
+- **Prometheus metrics:** command count, error count and a duration histogram. It uses atomic counters and a `DashMap` keyed by command name, and allocates no memory after the first call.
+- **Panic hook:** logs every panic with its location and counts it.
+- **`spawn_supervised`:** runs a background loop in its own task and restarts it after a panic, with a wait that doubles from 5 s up to 5 min. After 10 min without a panic, the wait resets.
+- The module's own unit tests are at the end of the file.
 
-Bu dosya tek başına derlenen bir crate değildir; `serenity`, `tokio`, `dashmap`, `tracing` ve `serde` bağımlılıklarını bekler.
+This file is not a standalone crate. It expects the `serenity`, `tokio`, `dashmap`, `tracing` and `serde` dependencies.
 
-## Lisans
+## License
 
-MIT — ayrıntı için [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE) for details.
